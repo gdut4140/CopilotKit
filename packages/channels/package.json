@@ -36,6 +36,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./a2ui": {
+      "types": "./dist/a2ui/index.d.ts",
+      "import": "./dist/a2ui/index.js"
+    },
     "./testing": {
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js"
