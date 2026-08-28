@@ -7,6 +7,7 @@ import {
   stableStringify,
 } from "@copilotkit/channels-core";
 import type {
+  ChannelNode,
   ChannelRunExtension,
   InteractionContext,
   Thread,
@@ -33,6 +34,11 @@ const unsupportedMessage = () =>
       children: "This interactive interface can’t be displayed here.",
     }),
   });
+
+const presentSurface = (ir: ChannelNode[]): ChannelNode =>
+  ir.length === 1 && ir[0]?.type === "message"
+    ? ir[0]
+    : Message({ fallbackText: "Interactive interface", children: ir });
 
 class A2UIActivitySession {
   private readonly document = new A2UIActivityDocument();
@@ -111,10 +117,7 @@ class A2UIActivitySession {
         dispatchAction: (interaction, dispatch) =>
           this.dispatchFromInteraction(interaction, dispatch),
       });
-      this.updater.offer(
-        Message({ fallbackText: "Interactive interface", children: ir }),
-        stableStringify(ir),
-      );
+      this.updater.offer(presentSurface(ir), stableStringify(ir));
       this.hasValidSurface = true;
     } catch (error) {
       if (error instanceof A2UIIncompleteSurfaceError) return;

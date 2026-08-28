@@ -8,6 +8,7 @@ import {
   createChannel,
   FakeAdapter,
   FakeAgent,
+  Message,
   Section,
 } from "@copilotkit/channels-core";
 import type { ChannelNode } from "@copilotkit/channels-core";
@@ -153,6 +154,63 @@ describe("createChannelA2UI", () => {
           "A2UI Component Schema — available components for generating UI surfaces. Use these component names and properties when creating A2UI operations.",
       ),
     ).toBe(true);
+  });
+
+  it("preserves a custom top-level Message for provider card presentation", async () => {
+    const adapter = new FakeAdapter();
+    const agent = new MiddlewareProbeAgent(
+      [],
+      [
+        {
+          id: "root",
+          component: "SearchResultCard",
+          headline: "Grounded result",
+        },
+      ],
+    );
+    const catalog = createChannelA2UICatalog(
+      {
+        SearchResultCard: {
+          props: z.object({ headline: z.string() }).strict(),
+        },
+      },
+      {
+        SearchResultCard: ({ props }) =>
+          Message({
+            accent: "#2D9CDB",
+            fallbackText: props.headline,
+            children: Section({ children: props.headline }),
+          }),
+      },
+      { catalogId: "copilotkit://search-result/v1" },
+    );
+    const channel = createChannel({
+      identifyUser: "platform",
+      adapters: [adapter],
+      agent,
+      extensions: [createChannelA2UI({ catalog, minUpdateIntervalMs: 0 })],
+    });
+    channel.onMention(async ({ thread }) => {
+      await thread.runAgent();
+    });
+
+    await channel.ɵruntime.start();
+    await adapter.getSink().onTurn({
+      conversationKey: "c1",
+      replyTarget: {},
+      userText: "show one result",
+      platform: "fake",
+    });
+
+    expect(adapter.updated.at(-1)?.ir).toEqual([
+      expect.objectContaining({
+        type: "message",
+        props: expect.objectContaining({
+          accent: "#2D9CDB",
+          fallbackText: "Grounded result",
+        }),
+      }),
+    ]);
   });
 
   it("fails preparation with an actionable error for a non-middleware agent", () => {

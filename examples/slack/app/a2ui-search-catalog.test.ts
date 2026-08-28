@@ -27,12 +27,16 @@ describe("SearchResultCard catalog", () => {
       }),
     );
 
-    expect(ir.map((node) => node.type)).toEqual([
-      "header",
-      "section",
-      "fields",
-      "section",
-    ]);
+    expect(ir.map((node) => node.type)).toEqual(["message"]);
+    expect(ir[0]?.props).toMatchObject({
+      accent: "#2D9CDB",
+      fallbackText: "Artemis II completes a launch milestone — NASA",
+    });
+    const children = ir[0]?.props.children;
+    expect(Array.isArray(children)).toBe(true);
+    expect(
+      (children as Array<{ type: string }>).map((node) => node.type),
+    ).toEqual(["header", "section", "fields", "section"]);
     expect(JSON.stringify(ir)).toContain("https://www.nasa.gov/example");
     expect(JSON.stringify(ir)).toContain("Why it matters");
   });
