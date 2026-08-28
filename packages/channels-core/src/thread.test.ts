@@ -22,6 +22,7 @@ function makeTestThread(overrides: {
     agentFactory: (id) => {
       throw new Error(`agentFactory not needed in this test: ${id}`);
     },
+    extensions: [],
     tools: new Map(),
     toolDescriptors: [],
     context: [],

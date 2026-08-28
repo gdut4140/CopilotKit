@@ -89,6 +89,7 @@ test("an inbound message outranks the thread's default prompt", async () => {
     threadId: "c1",
     registry: new ActionRegistry({ store: new InMemoryActionStore() }),
     agentFactory: () => agent,
+    extensions: [],
     tools: new Map(),
     toolDescriptors: [],
     context: [],

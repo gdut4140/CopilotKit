@@ -212,4 +212,122 @@ describe("runAgentLoop", () => {
     expect(result.interrupted).toBe(false);
     expect(result.iterations).toBeGreaterThanOrEqual(1);
   });
+
+  it("fans activity events to the renderer, extension, and canonical subscriber", async () => {
+    const renderer = makeFakeRunRenderer();
+    const rendererSeen = vi.fn();
+    renderer.subscriber.onActivitySnapshotEvent = rendererSeen;
+    const extensionSeen = vi.fn();
+    const canonicalSeen = vi.fn();
+    const event = {
+      type: "ACTIVITY_SNAPSHOT",
+      messageId: "a2ui-1",
+      activityType: "a2ui-surface",
+      content: { status: "building" },
+      replace: true,
+    };
+    const agent = new FakeAgent([
+      async (subscriber) => {
+        await subscriber.onActivitySnapshotEvent?.({ event } as never);
+      },
+    ]);
+
+    await runAgentLoop({
+      agent,
+      renderer,
+      tools: new Map(),
+      toolDescriptors,
+      context,
+      extensionSubscribers: [{ onActivitySnapshotEvent: extensionSeen }],
+      subscriber: { onActivitySnapshotEvent: canonicalSeen },
+      makeToolCtx: () => ({
+        thread: {} as never,
+        user: null,
+        actor: { id: "actor", kind: "unknown" },
+        platform: "fake",
+      }),
+    });
+
+    expect(rendererSeen).toHaveBeenCalledOnce();
+    expect(extensionSeen).toHaveBeenCalledOnce();
+    expect(canonicalSeen).toHaveBeenCalledOnce();
+  });
+
+  it("forwards extension properties alongside tools and context", async () => {
+    const renderer = makeFakeRunRenderer();
+    const agent = new FakeAgent();
+    const runAgent = vi.spyOn(agent, "runAgent");
+    const a2uiAction = {
+      userAction: {
+        name: "retry",
+        surfaceId: "deployment",
+        sourceComponentId: "retry-button",
+        context: { service: "api" },
+        timestamp: "2026-08-27T00:00:00.000Z",
+      },
+    };
+
+    await runAgentLoop({
+      agent,
+      renderer,
+      tools: new Map(),
+      toolDescriptors,
+      context,
+      forwardedProps: { a2uiAction },
+      makeToolCtx: () => ({
+        thread: {} as never,
+        user: null,
+        actor: { id: "actor", kind: "unknown" },
+        platform: "fake",
+      }),
+    });
+
+    expect(runAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ forwardedProps: { a2uiAction } }),
+      expect.anything(),
+    );
+  });
+
+  it("does not let an extension failure suppress canonical ingestion", async () => {
+    const renderer = makeFakeRunRenderer();
+    const canonicalSeen = vi.fn();
+    const agent = new FakeAgent([
+      async (subscriber) => {
+        await subscriber.onActivitySnapshotEvent?.({
+          event: {
+            type: "ACTIVITY_SNAPSHOT",
+            messageId: "a2ui-1",
+            activityType: "a2ui-surface",
+            content: { status: "building" },
+            replace: true,
+          },
+        } as never);
+      },
+    ]);
+
+    await expect(
+      runAgentLoop({
+        agent,
+        renderer,
+        tools: new Map(),
+        toolDescriptors,
+        context,
+        extensionSubscribers: [
+          {
+            onActivitySnapshotEvent() {
+              throw new Error("extension failed");
+            },
+          },
+        ],
+        subscriber: { onActivitySnapshotEvent: canonicalSeen },
+        makeToolCtx: () => ({
+          thread: {} as never,
+          user: null,
+          actor: { id: "actor", kind: "unknown" },
+          platform: "fake",
+        }),
+      }),
+    ).rejects.toThrow("extension failed");
+    expect(canonicalSeen).toHaveBeenCalledOnce();
+  });
 });

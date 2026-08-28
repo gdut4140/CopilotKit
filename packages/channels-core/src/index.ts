@@ -61,7 +61,7 @@ export type {
 
 // Thread
 export { Thread } from "./thread.js";
-export type { ThreadDeps } from "./thread.js";
+export type { ChannelRunAgentInput, ThreadDeps } from "./thread.js";
 
 // Platform adapter boundary
 export type {

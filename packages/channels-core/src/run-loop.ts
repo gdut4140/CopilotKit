@@ -43,6 +43,10 @@ export interface RunLoopArgs {
   initialResume?: { resume: unknown };
   /** Subscriber used for each underlying agent step. Defaults to the renderer. */
   subscriber?: AgentSubscriber;
+  /** Extension observers composed with the provider renderer for every step. */
+  extensionSubscribers?: AgentSubscriber[];
+  /** Extra properties forwarded to every underlying agent step. */
+  forwardedProps?: Record<string, unknown>;
   /**
    * Canonical identity for a managed outer run. When set, inner agent lifecycle
    * events stay private to each tool-loop step and this function emits one
@@ -333,10 +337,15 @@ export async function runAgentLoop(
     deliveryError = error;
   };
   const isRendererClosed = (): boolean => hasDeliveryError;
+  const providerSubscriber = (args.extensionSubscribers ?? []).reduce(
+    (combined, extensionSubscriber) =>
+      mergeAgentSubscribers(combined, extensionSubscriber),
+    renderer.subscriber,
+  );
   const subscriber =
     args.subscriber || args.canonicalRun
       ? mergeAgentSubscribers(
-          renderer.subscriber,
+          providerSubscriber,
           args.subscriber ?? {},
           args.canonicalRun
             ? {
@@ -349,7 +358,7 @@ export async function runAgentLoop(
               }
             : {},
         )
-      : renderer.subscriber;
+      : providerSubscriber;
   const maxIterations = args.maxIterations ?? 6;
   const executed = new Set<string>();
   let resume = initialResume;
@@ -361,13 +370,24 @@ export async function runAgentLoop(
     for (let i = 0; i < maxIterations; i++) {
       if (resume) {
         await agent.runAgent(
-          { forwardedProps: { command: resume } },
+          {
+            forwardedProps: {
+              ...args.forwardedProps,
+              command: resume,
+            },
+          },
           subscriber,
         );
         resume = undefined;
       } else {
         await agent.runAgent(
-          { tools: toolDescriptors as never, context: context as never },
+          {
+            tools: toolDescriptors as never,
+            context: context as never,
+            ...(args.forwardedProps
+              ? { forwardedProps: args.forwardedProps }
+              : {}),
+          },
           subscriber,
         );
       }

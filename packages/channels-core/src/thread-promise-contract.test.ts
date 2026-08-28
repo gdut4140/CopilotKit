@@ -21,6 +21,7 @@ function setupThreadWithSyncDeleteFailure(failure: Error): Thread {
     agentFactory: (threadId) => {
       throw new Error(`agentFactory not needed in this test: ${threadId}`);
     },
+    extensions: [],
     tools: new Map(),
     toolDescriptors: [],
     context: [],

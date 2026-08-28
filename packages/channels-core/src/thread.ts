@@ -34,6 +34,10 @@ import type { StandardSchemaV1 } from "./standard-schema.js";
 import { hasMemoryAccess, resolveMemoryGrant } from "./memory.js";
 import type { MemoryGrant, ResolvedChannelMemory } from "./memory.js";
 import type { ChannelComponentRenderContext } from "./channel-component.js";
+import type {
+  ChannelExtension,
+  ChannelRunExtension,
+} from "./channel-extension.js";
 
 /** A Channel run requested Memory without an attached Intelligence backend. */
 export class ChannelMemoryUnavailableError extends Error {
@@ -85,6 +89,7 @@ export interface ThreadDeps {
   conversationKey: string;
   registry: ActionRegistry;
   agentFactory: (threadId: string) => AbstractAgent;
+  extensions: readonly ChannelExtension[];
   tools: Map<string, ChannelTool>;
   toolDescriptors: AgentToolDescriptor[];
   context: ContextEntry[];
@@ -131,6 +136,38 @@ export interface ThreadDeps {
   telemetry?: {
     capture(event: string, properties: Record<string, unknown>): void;
   };
+}
+
+export interface ChannelRunAgentInput {
+  context?: ContextEntry[];
+  tools?: ChannelTool[];
+  /**
+   * A user message to inject before running. When the adapter's conversation
+   * store does not seed the in-flight turn, an omitted prompt defaults to
+   * non-empty inbound `message.contentParts` or `message.text`. Welcome
+   * handlers instead default to `"Introduce yourself to the channel!"`.
+   * Pass a prompt explicitly to override either default or when input isn't in
+   * reconstructed history — e.g. slash-command args, which are never posted to
+   * the channel.
+   */
+  prompt?: string | AgentContentPart[];
+  /**
+   * Auto-bridge cross-platform transcripts for this run. When truthy AND the
+   * thread has a resolved `userId` AND a `Transcripts` instance, this:
+   *   1. injects prior history (`transcripts.list`, default limit 20) as a
+   *      context entry,
+   *   2. appends the current user turn,
+   *   3. runs the agent,
+   *   4. captures the assistant reply and appends it.
+   * This flag OWNS the bridge — callers using it should NOT also manually
+   * append the same user/assistant turn via `channel.transcripts.append`.
+   * No-ops with a one-time warning when identity/transcripts aren't configured.
+   */
+  transcript?: boolean | { limit?: number };
+  /** Intelligence Memory access for this run only. Omission disables Memory. */
+  memory?: MemoryGrant;
+  /** Extension-owned AG-UI properties for this run. */
+  forwardedProps?: Record<string, unknown>;
 }
 
 /** Stable rejection for surfaces that cannot hold one run open for a choice. */
@@ -474,35 +511,7 @@ export class Thread implements ThreadInterface {
     });
   }
 
-  runAgent(input?: {
-    context?: ContextEntry[];
-    tools?: ChannelTool[];
-    /**
-     * A user message to inject before running. When the adapter's conversation
-     * store does not seed the in-flight turn, an omitted prompt defaults to
-     * non-empty inbound `message.contentParts` or `message.text`. Welcome
-     * handlers instead default to `"Introduce yourself to the channel!"`.
-     * Pass a prompt explicitly to override either default or when input isn't in
-     * reconstructed history — e.g. slash-command args, which are never posted to
-     * the channel.
-     */
-    prompt?: string | AgentContentPart[];
-    /**
-     * Auto-bridge cross-platform transcripts for this run. When truthy AND the
-     * thread has a resolved `userId` AND a `Transcripts` instance, this:
-     *   1. injects prior history (`transcripts.list`, default limit 20) as a
-     *      context entry,
-     *   2. appends the current user turn,
-     *   3. runs the agent,
-     *   4. captures the assistant reply and appends it.
-     * This flag OWNS the bridge — callers using it should NOT also manually
-     * append the same user/assistant turn via `channel.transcripts.append`.
-     * No-ops with a one-time warning when identity/transcripts aren't configured.
-     */
-    transcript?: boolean | { limit?: number };
-    /** Intelligence Memory access for this run only. Omission disables Memory. */
-    memory?: MemoryGrant;
-  }): Promise<MessageRef | undefined> {
+  runAgent(input?: ChannelRunAgentInput): Promise<MessageRef | undefined> {
     try {
       this.deps.adapter.assertRunAgentSupported?.(this.deps.replyTarget);
     } catch (error) {
@@ -664,6 +673,7 @@ export class Thread implements ThreadInterface {
       prompt?: string | AgentContentPart[];
       transcript?: boolean | { limit?: number };
       memory?: ResolvedChannelMemory;
+      forwardedProps?: Record<string, unknown>;
     },
   ): Promise<MessageRef | undefined> {
     const session = await this.deps.adapter.conversationStore.getOrCreate(
@@ -749,6 +759,22 @@ export class Thread implements ThreadInterface {
       // assistant messages this run produced (step 4).
       const messagesBefore = session.agent.messages.length;
 
+      const runExtensions: ChannelRunExtension[] = [];
+      let runExtensionsFinished = false;
+      const finishRunExtensions = async (): Promise<void> => {
+        if (runExtensionsFinished) return;
+        runExtensionsFinished = true;
+        let firstError: unknown;
+        for (const extension of runExtensions) {
+          try {
+            await extension.finish?.();
+          } catch (error) {
+            firstError ??= error;
+          }
+        }
+        if (firstError !== undefined) throw firstError;
+      };
+
       const startedAt = Date.now();
       let loopResult: { iterations: number; interrupted: boolean };
       // Telemetry stage: "agent" while the run loop runs, "finalize" for the
@@ -757,6 +783,13 @@ export class Thread implements ThreadInterface {
       // hidden behind an already-sent success event.
       let stage: "agent" | "finalize" = "agent";
       try {
+        for (const extension of this.deps.extensions) {
+          const runExtension = extension.createRun?.({
+            thread: this,
+            platform: this.platform,
+          });
+          if (runExtension) runExtensions.push(runExtension);
+        }
         const loopArgs: RunLoopArgs = {
           agent: session.agent,
           renderer,
@@ -787,6 +820,10 @@ export class Thread implements ThreadInterface {
               });
           },
           initialResume,
+          extensionSubscribers: runExtensions.map(
+            (extension) => extension.subscriber,
+          ),
+          forwardedProps: extra?.forwardedProps,
         };
         loopResult = this.deps.adapter.runAgentLifecycle
           ? await this.deps.adapter.runAgentLifecycle({
@@ -833,11 +870,17 @@ export class Thread implements ThreadInterface {
         // open across runAgent iterations (e.g. a native streaming message). A
         // no-op for renderers whose per-message streams already self-terminate, and
         // for runs that were interrupted (the renderer guards that internally).
+        await finishRunExtensions();
         await renderer.finish?.();
       } catch (err) {
         // Best-effort finalize on failure so native Slack streams still get
         // stopStream after mid-run delivery/append errors (deferred deliveryError
         // or run-loop throw). finish is idempotent; original error wins.
+        try {
+          await finishRunExtensions();
+        } catch {
+          // Prefer the original run/finalization failure.
+        }
         try {
           await renderer.finish?.();
         } catch {

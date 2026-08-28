@@ -1063,6 +1063,50 @@ describe("createChannel", () => {
     expect(prepared[0]?.threadId).toBe("c1");
   });
 
+  it.each(["success", "failure", "abort"] as const)(
+    "finalizes each run extension once on %s",
+    async (outcome) => {
+      const fake = new FakeAdapter();
+      const finish = vi.fn();
+      const configured = new FakeAgent([
+        outcome === "success"
+          ? (subscriber) => {
+              subscriber.onRunFinishedEvent?.({ event: {} } as never);
+            }
+          : () => {
+              const error = new Error(
+                outcome === "abort" ? "aborted" : "agent failed",
+              );
+              if (outcome === "abort") error.name = "AbortError";
+              throw error;
+            },
+      ]);
+      const channel = createChannel({
+        identifyUser: "platform",
+        adapters: [fake],
+        agent: configured,
+        extensions: [
+          {
+            createRun: () => ({ subscriber: {}, finish }),
+          },
+        ],
+      });
+      channel.onMention(async ({ thread }) => {
+        try {
+          await thread.runAgent();
+        } catch {
+          // The failure case is asserted through finalization.
+        }
+      });
+
+      await channel.ɵruntime.start();
+      fake.emitTurn({ userText: "status", conversationKey: "c1" });
+      await tick();
+
+      expect(finish).toHaveBeenCalledOnce();
+    },
+  );
+
   it("singleton agent whose clone returns itself fails loud", async () => {
     const state = new MemoryStore();
     const bad = new FakeAgent();

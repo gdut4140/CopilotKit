@@ -862,6 +862,7 @@ export function createChannel<
       conversationKey,
       registry,
       agentFactory,
+      extensions,
       tools: toolMap,
       toolDescriptors,
       context,
