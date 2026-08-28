@@ -103,14 +103,12 @@ const Card = defineChannelA2UIComponent(CardApi, ({ props, children }) =>
 
 const Button = defineChannelA2UIComponent(
   ButtonApi,
-  ({ props, children, componentId, surfaceId, rawProps }) => {
+  ({ props, children, componentId, surfaceId, rawProps, dispatch }) => {
     const label = collectText(renderToIR(children(String(props.child))));
     const node = ChannelButton({
       children: label || "Action",
       style: props.variant === "primary" ? "primary" : undefined,
-      onClick: () => {
-        if (typeof props.action === "function") props.action();
-      },
+      onClick: (interaction) => dispatch(rawProps.action, interaction),
     });
     return {
       ...node,

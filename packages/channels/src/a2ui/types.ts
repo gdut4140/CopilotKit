@@ -4,7 +4,7 @@ import type {
   ComponentApi,
   ResolveA2uiProps,
 } from "@a2ui/web_core/v0_9";
-import type { Renderable } from "@copilotkit/channels-core";
+import type { InteractionContext, Renderable } from "@copilotkit/channels-core";
 import type { z, ZodObject, ZodRawShape } from "zod";
 
 export interface ChannelA2UIComponentDefinition<
@@ -25,7 +25,7 @@ export interface ChannelA2UIRendererProps<Props> {
   readonly surfaceId: string;
   readonly rawProps: Readonly<Record<string, unknown>>;
   children(id: string, basePath?: string): Renderable;
-  dispatch(action: unknown): Promise<void>;
+  dispatch(action: unknown, interaction?: InteractionContext): Promise<void>;
 }
 
 export type ChannelA2UIRenderer<Props> = (
@@ -45,7 +45,7 @@ export interface ChannelA2UILoweringContext {
   readonly surfaceId: string;
   readonly rawProps: Readonly<Record<string, unknown>>;
   children(id: string, basePath?: string): Renderable;
-  dispatch(action: unknown): Promise<void>;
+  dispatch(action: unknown, interaction?: InteractionContext): Promise<void>;
 }
 
 export interface ChannelA2UIComponentImplementation extends ComponentApi {

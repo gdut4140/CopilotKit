@@ -170,7 +170,7 @@ describe("createChannelA2UI", () => {
     ).toThrow("Channel A2UI requires an AG-UI agent that supports middleware");
   });
 
-  it("injects a custom catalog and forwards the exact Button action", async () => {
+  it("forwards a Button action on the interaction delivery Thread", async () => {
     const components = [
       {
         id: "root",
@@ -239,6 +239,21 @@ describe("createChannelA2UI", () => {
       },
     );
     const adapter = new FakeAdapter();
+    const initialReplyTarget = { delivery: "initial" };
+    let initialDeliveryClosed = false;
+    (
+      adapter as FakeAdapter & {
+        trackThreadOperation<T>(
+          target: unknown,
+          operation: () => Promise<T>,
+        ): Promise<T>;
+      }
+    ).trackThreadOperation = (target, operation) => {
+      if (target === initialReplyTarget && initialDeliveryClosed) {
+        return Promise.reject(new Error("initial delivery is closed"));
+      }
+      return operation();
+    };
     const agent = new MiddlewareProbeAgent([], components);
     const channel = createChannel({
       identifyUser: "platform",
@@ -252,10 +267,11 @@ describe("createChannelA2UI", () => {
     await channel.ɵruntime.start();
     await adapter.getSink().onTurn({
       conversationKey: "c1",
-      replyTarget: {},
+      replyTarget: initialReplyTarget,
       userText: "show deployments",
       platform: "fake",
     });
+    initialDeliveryClosed = true;
 
     expect(
       agent.seenInputs[0]?.context
@@ -270,7 +286,7 @@ describe("createChannelA2UI", () => {
     await adapter.getSink().onInteraction({
       id: actionId,
       conversationKey: "c1",
-      replyTarget: {},
+      replyTarget: { delivery: "interaction" },
       value: undefined,
     });
     await vi.waitFor(() => expect(agent.seenInputs).toHaveLength(2));

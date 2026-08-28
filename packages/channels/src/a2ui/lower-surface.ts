@@ -1,7 +1,11 @@
 import { ComponentContext, GenericBinder } from "@a2ui/web_core/v0_9";
 import type { SurfaceModel } from "@a2ui/web_core/v0_9";
 import { renderToIR } from "@copilotkit/channels-core";
-import type { ChannelNode, Renderable } from "@copilotkit/channels-core";
+import type {
+  ChannelNode,
+  InteractionContext,
+  Renderable,
+} from "@copilotkit/channels-core";
 import type { ChannelA2UIComponentImplementation } from "./types.js";
 
 export class A2UIIncompleteSurfaceError extends Error {
@@ -18,8 +22,16 @@ export class A2UIUnsupportedComponentError extends Error {
   }
 }
 
+interface A2UILoweringOptions {
+  dispatchAction(
+    interaction: InteractionContext,
+    dispatch: () => Promise<void>,
+  ): Promise<void>;
+}
+
 export function lowerSurface(
   surface: SurfaceModel<ChannelA2UIComponentImplementation>,
+  options?: A2UILoweringOptions,
 ): ChannelNode[] {
   const lower = (
     componentId: string,
@@ -51,7 +63,12 @@ export function lowerSurface(
           surfaceId: surface.id,
           rawProps: model.properties,
           children,
-          dispatch: (action) => context.dispatchAction(action),
+          dispatch: (action, interaction) => {
+            const dispatch = () => context.dispatchAction(action);
+            return interaction && options
+              ? options.dispatchAction(interaction, dispatch)
+              : dispatch();
+          },
         }),
       );
     } finally {

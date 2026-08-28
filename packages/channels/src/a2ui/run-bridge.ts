@@ -6,7 +6,11 @@ import {
   Section,
   stableStringify,
 } from "@copilotkit/channels-core";
-import type { ChannelRunExtension, Thread } from "@copilotkit/channels-core";
+import type {
+  ChannelRunExtension,
+  InteractionContext,
+  Thread,
+} from "@copilotkit/channels-core";
 import { A2UIActivityDocument } from "./activity-document.js";
 import {
   A2UIIncompleteSurfaceError,
@@ -36,6 +40,7 @@ class A2UIActivitySession {
   private started?: Promise<void>;
   private hasValidSurface = false;
   private fallbackOffered = false;
+  private interactionThread?: InteractionContext["thread"];
 
   constructor(
     private readonly messageId: string,
@@ -91,7 +96,8 @@ class A2UIActivitySession {
       const processor = new MessageProcessor(
         [this.catalog.processorCatalog],
         async (action) => {
-          await this.thread.runAgent({
+          const thread = this.interactionThread ?? this.thread;
+          await thread.runAgent({
             forwardedProps: { a2uiAction: { userAction: action } },
           });
         },
@@ -101,7 +107,10 @@ class A2UIActivitySession {
       if (surfaces.length !== 1 || !surfaces[0]) {
         throw new A2UIIncompleteSurfaceError();
       }
-      const ir = lowerSurface(surfaces[0]);
+      const ir = lowerSurface(surfaces[0], {
+        dispatchAction: (interaction, dispatch) =>
+          this.dispatchFromInteraction(interaction, dispatch),
+      });
       this.updater.offer(
         Message({ fallbackText: "Interactive interface", children: ir }),
         stableStringify(ir),
@@ -117,6 +126,19 @@ class A2UIActivitySession {
             : "processing_failed";
       console.warn(`[channels/a2ui] ${this.messageId}: ${code}`);
       if (!this.hasValidSurface) this.offerFallback(code);
+    }
+  }
+
+  private dispatchFromInteraction(
+    interaction: InteractionContext,
+    dispatch: () => Promise<void>,
+  ): Promise<void> {
+    const previous = this.interactionThread;
+    this.interactionThread = interaction.thread;
+    try {
+      return dispatch();
+    } finally {
+      this.interactionThread = previous;
     }
   }
 
