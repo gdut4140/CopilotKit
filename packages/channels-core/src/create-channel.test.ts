@@ -8,7 +8,7 @@ import { MemoryStore } from "./state/memory-store.js";
 import { Section, Actions, Button } from "@copilotkit/channels-ui";
 import type { ChannelNode } from "@copilotkit/channels-ui";
 import type { PlatformAdapter } from "./platform-adapter.js";
-import type { AgentSubscriber } from "@ag-ui/client";
+import type { AbstractAgent, AgentSubscriber } from "@ag-ui/client";
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
@@ -1027,6 +1027,40 @@ describe("createChannel", () => {
     expect(seen[0]).not.toBe(prototype);
     expect(seen[1]).not.toBe(prototype);
     expect(seen[0]).not.toBe(seen[1]);
+  });
+
+  it("prepares each agent after per-thread isolation", async () => {
+    const fake = new FakeAdapter();
+    const configured = new FakeAgent([
+      (subscriber) => {
+        subscriber.onRunFinishedEvent?.({ event: {} } as never);
+      },
+    ]);
+    const prepared: AbstractAgent[] = [];
+    const channel = createChannel({
+      identifyUser: "platform",
+      adapters: [fake],
+      agent: configured,
+      extensions: [
+        {
+          prepareAgent(agent, context) {
+            expect(context.threadId).toBe("c1");
+            prepared.push(agent);
+          },
+        },
+      ],
+    });
+    channel.onMention(async ({ thread }) => {
+      await thread.runAgent();
+    });
+
+    await channel.ɵruntime.start();
+    fake.emitTurn({ userText: "status", conversationKey: "c1" });
+    await tick();
+
+    expect(prepared).toHaveLength(1);
+    expect(prepared[0]).not.toBe(configured);
+    expect(prepared[0]?.threadId).toBe("c1");
   });
 
   it("singleton agent whose clone returns itself fails loud", async () => {

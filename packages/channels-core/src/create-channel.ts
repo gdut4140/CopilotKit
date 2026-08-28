@@ -22,6 +22,7 @@ import { normalizeCommandName, toCommandSpec } from "./commands.js";
 import type { ChannelCommand, CommandContext } from "./commands.js";
 import { Thread } from "./thread.js";
 import type { ThreadDeps } from "./thread.js";
+import type { ChannelExtension } from "./channel-extension.js";
 import type { AbstractAgent } from "@ag-ui/client";
 import { sanitizeAgentEventStream } from "./sanitize-agent-events.js";
 import type {
@@ -435,6 +436,8 @@ export interface CreateChannelOptions<
    */
   replyContinuation?: ReplyContinuationOptions;
   agent?: AbstractAgent | ((threadId: string) => AbstractAgent);
+  /** Experimental protocol-neutral hooks applied to isolated agents and runs. */
+  extensions?: ChannelExtension[];
   /**
    * Tolerate the AG-UI event streams real agents emit. On by default.
    *
@@ -666,6 +669,17 @@ export function createChannel<
   let registry: ActionRegistry | undefined;
   let telemetry: ChannelTelemetry | undefined;
 
+  const extensions = Object.freeze([...(opts.extensions ?? [])]);
+  const prepareAgent = (
+    agent: AbstractAgent,
+    threadId: string,
+  ): AbstractAgent => {
+    for (const extension of extensions) {
+      extension.prepareAgent?.(agent, { threadId });
+    }
+    return agent;
+  };
+
   const agentFactory: (threadId: string) => AbstractAgent = (() => {
     // Applied here rather than at each call site so a developer never has to
     // know the workaround exists. Idempotent, so reusing one agent instance
@@ -689,9 +703,13 @@ export function createChannel<
     // see `isolateAgentInstance`.
     if (typeof a === "function") {
       return (threadId: string) =>
-        sanitize(isolateAgentInstance(a(threadId), threadId));
+        prepareAgent(
+          sanitize(isolateAgentInstance(a(threadId), threadId)),
+          threadId,
+        );
     }
-    return (threadId: string) => sanitize(isolateAgentInstance(a, threadId));
+    return (threadId: string) =>
+      prepareAgent(sanitize(isolateAgentInstance(a, threadId)), threadId);
   })();
 
   /** Per-conversation serial turn queue (error-boundaried so one failure cannot poison the chain). */

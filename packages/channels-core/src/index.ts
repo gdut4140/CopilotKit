@@ -32,6 +32,12 @@ export type {
   ChannelComponent,
   ChannelComponentRegistration,
 } from "./create-channel.js";
+export type {
+  ChannelAgentPreparationContext,
+  ChannelExtension,
+  ChannelRunExtension,
+  ChannelRunExtensionContext,
+} from "./channel-extension.js";
 export { defineChannelComponent } from "./channel-component.js";
 export type {
   ChannelComponentDefinition,
