@@ -5,18 +5,44 @@ from __future__ import annotations
 import json
 from typing import Dict, Optional
 
-from ag_ui_adk import ADKAgent, add_adk_fastapi_endpoint
+from ag_ui_adk import (
+    ADKAgent,
+    AGUIToolset,
+    CONTEXT_STATE_KEY,
+    add_adk_fastapi_endpoint,
+)
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from google.adk.agents import LlmAgent
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
-from google.adk.tools import ToolContext
+from google.adk.tools import ToolContext, google_search
+from google.adk.tools.agent_tool import AgentTool
 from google.genai import types
 from pydantic import BaseModel, Field
 
 load_dotenv()
+
+SEARCH_RESULT_CONTEXT_DESCRIPTION = "Grounded web search result"
+SEARCH_CARD_COMPOSITION_GUIDE = """
+For a grounded web-search result, copy the six values from the
+"Grounded web search result" context exactly; never invent, rewrite, or replace
+them. Produce exactly this component structure, replacing only the six uppercase
+placeholders with those context values and adding no other components:
+[
+  {"id": "root", "component": "Column", "children": ["result", "actions"]},
+  {"id": "result", "component": "SearchResultCard", "headline": "HEADLINE",
+   "summary": "SUMMARY", "sourceName": "SOURCE_NAME",
+   "sourceUrl": "SOURCE_URL", "whyItMatters": "WHY_IT_MATTERS",
+   "searchedAt": "SEARCHED_AT"},
+  {"id": "actions", "component": "Row", "children": ["acknowledge"]},
+  {"id": "acknowledge-label", "component": "Text", "text": "Acknowledge"},
+  {"id": "acknowledge", "component": "Button",
+   "child": "acknowledge-label", "variant": "primary",
+   "action": {"event": {"name": "acknowledge_search_result"}}}
+]
+"""
 
 
 class ProverbsState(BaseModel):
@@ -55,6 +81,43 @@ def set_proverbs(tool_context: ToolContext, new_proverbs: list[str]) -> Dict[str
 def get_weather(tool_context: ToolContext, location: str) -> Dict[str, str]:
     """Get the weather for a given location. Ensure location is fully spelled out."""
     return {"status": "success", "message": f"The weather in {location} is sunny."}
+
+
+def stage_search_result(
+    tool_context: ToolContext,
+    headline: str,
+    summary: str,
+    source_name: str,
+    source_url: str,
+    why_it_matters: str,
+    searched_at: str,
+) -> Dict[str, str]:
+    """Stage one grounded result so the A2UI sub-agent can render exact values."""
+    entries = [
+        entry
+        for entry in list(tool_context.state.get(CONTEXT_STATE_KEY, []))
+        if not (
+            isinstance(entry, dict)
+            and entry.get("description") == SEARCH_RESULT_CONTEXT_DESCRIPTION
+        )
+    ]
+    entries.append(
+        {
+            "description": SEARCH_RESULT_CONTEXT_DESCRIPTION,
+            "value": json.dumps(
+                {
+                    "headline": headline,
+                    "summary": summary,
+                    "sourceName": source_name,
+                    "sourceUrl": source_url,
+                    "whyItMatters": why_it_matters,
+                    "searchedAt": searched_at,
+                }
+            ),
+        }
+    )
+    tool_context.state[CONTEXT_STATE_KEY] = entries
+    return {"status": "success", "message": "Search result staged for A2UI"}
 
 
 def on_before_agent(callback_context: CallbackContext):
@@ -136,6 +199,22 @@ def simple_after_model_modifier(
     return None
 
 
+search_agent = LlmAgent(
+    name="SearchAgent",
+    model="gemini-2.5-flash",
+    description="Searches the live web and returns one grounded result.",
+    instruction="""
+        Use Google Search for the user's current-events or web-research request.
+        Return exactly one strongest relevant result with its headline, a concise
+        summary, source publisher, canonical absolute source URL, why it matters,
+        and the current UTC search time in ISO 8601 format. Choose a result for
+        which a real canonical source URL is available. Never invent a source,
+        URL, date, or event.
+    """,
+    tools=[google_search],
+)
+
+
 proverbs_agent = LlmAgent(
     name="ProverbsAgent",
     model="gemini-2.5-flash",
@@ -165,8 +244,25 @@ proverbs_agent = LlmAgent(
         - "What's the weather today in Tokyo?" → Use the tool with the location "Tokyo"
         - "Whats the weather right now" → Use the location "Everywhere ever in the whole wide world"
         - Is it raining in London? → Use the tool with the location "London"
+
+
+        IMPORTANT RULES ABOUT LIVE WEB RESEARCH AND A2UI:
+        1. For a current-events or web-research request, delegate to SearchAgent.
+        2. Copy SearchAgent's six result fields exactly into stage_search_result.
+        3. Only after staging succeeds, call the available A2UI generation tool
+           exactly once with intent="create".
+        4. Do not substitute a prose-only answer for the card. After rendering, any
+           prose must be a single short sentence.
+        5. When the user action "acknowledge_search_result" is received, briefly
+           confirm it without searching again or rendering another card.
         """,
-    tools=[set_proverbs, get_weather],
+    tools=[
+        set_proverbs,
+        get_weather,
+        AgentTool(agent=search_agent),
+        stage_search_result,
+        AGUIToolset(),
+    ],
     before_agent_callback=on_before_agent,
     before_model_callback=before_model_modifier,
     after_model_callback=simple_after_model_modifier,
@@ -178,6 +274,7 @@ adk_proverbs_agent = ADKAgent(
     user_id="demo_user",
     session_timeout_seconds=3600,
     use_in_memory_services=True,
+    a2ui={"guidelines": {"composition_guide": SEARCH_CARD_COMPOSITION_GUIDE}},
 )
 
 # Create FastAPI app
