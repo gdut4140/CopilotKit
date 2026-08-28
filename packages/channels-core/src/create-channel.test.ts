@@ -25,12 +25,12 @@ const __handlerTypeGuards = () => {
   channel.onInterrupt<{ question: string }>("ask", ({ payload }) => {
     payload.question.toUpperCase();
     // @ts-expect-error 'missing' is not on the payload type
-    payload.missing;
+    void payload.missing;
   });
   channel.onInteraction<{ page: number }>("next", (ctx) => {
     ctx.action.value?.page.toFixed(0);
     // @ts-expect-error 'nope' is not on the action value type
-    ctx.action.value?.nope;
+    void ctx.action.value?.nope;
   });
 };
 void __handlerTypeGuards;
@@ -1374,7 +1374,6 @@ describe("createChannel", () => {
     });
 
     await channel.ɵruntime.start();
-    const sink = fake.getSink();
 
     // Drive a turn so identity is resolved and we can verify transcripts exist
     const thread = { platform: "fake", conversationKey: "c1" } as Parameters<

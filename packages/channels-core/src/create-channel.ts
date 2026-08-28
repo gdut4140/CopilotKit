@@ -49,6 +49,7 @@ import { resolveChannelUser } from "./identity.js";
 import type {
   ChannelIdentifyUser,
   ChannelIdentityContext,
+  IngressIdentityContext,
 } from "./identity.js";
 import type { StandardSchemaV1, InferSchemaOutput } from "./standard-schema.js";
 import { isChannelComponentDefinition } from "./channel-component.js";
@@ -570,7 +571,7 @@ function identityContextFromIngress(
   event: {
     conversationKey?: string;
     actor?: ProviderActor;
-    identityContext?: import("./identity.js").IngressIdentityContext;
+    identityContext?: IngressIdentityContext;
   },
   trigger: string,
 ): ChannelIdentityContext {
