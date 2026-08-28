@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
 import { Catalog, MessageProcessor } from "@a2ui/web_core/v0_9";
 import type { ComponentApi } from "@a2ui/web_core/v0_9";
 import {
@@ -8,6 +9,23 @@ import {
 } from "@a2ui/web_core/v0_9/basic_catalog";
 
 describe("A2UI MessageProcessor Node compatibility", () => {
+  it("imports the built A2UI entrypoint in plain Node ESM", () => {
+    const entrypoint = new URL("../../dist/a2ui/index.js", import.meta.url)
+      .href;
+
+    expect(() =>
+      execFileSync(
+        process.execPath,
+        [
+          "--input-type=module",
+          "--eval",
+          `await import(${JSON.stringify(entrypoint)})`,
+        ],
+        { stdio: "pipe" },
+      ),
+    ).not.toThrow();
+  });
+
   it("creates and reads a v0.9 surface without browser globals", () => {
     const catalog = new Catalog<ComponentApi>(
       "copilotkit://channels-node-probe/v1",

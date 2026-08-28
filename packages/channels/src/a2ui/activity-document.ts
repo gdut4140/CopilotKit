@@ -1,4 +1,4 @@
-import { applyPatch } from "fast-json-patch";
+import fastJsonPatch from "fast-json-patch";
 import type { Operation } from "fast-json-patch";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -32,7 +32,7 @@ export class A2UIActivityDocument {
     }
     const candidate = structuredClone(this.retained);
     try {
-      this.retained = applyPatch(
+      this.retained = fastJsonPatch.applyPatch(
         candidate,
         patch as Operation[],
         true,
