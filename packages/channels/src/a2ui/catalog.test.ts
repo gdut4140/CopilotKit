@@ -35,4 +35,45 @@ describe("createChannelA2UICatalog", () => {
     });
     expect(JSON.stringify(catalog.middlewareSchema)).not.toContain("lower");
   });
+
+  it("rejects a custom component that shadows the Channel-safe catalog", () => {
+    expect(() =>
+      createChannelA2UICatalog(
+        { Text: { props: z.object({ value: z.string() }) } },
+        { Text: () => "shadow" },
+        { includeChannelBasicCatalog: true },
+      ),
+    ).toThrow(
+      'Custom A2UI component "Text" conflicts with the Channel catalog',
+    );
+  });
+
+  it("advertises exactly the Channel-safe basic subset", () => {
+    const catalog = createChannelA2UICatalog(
+      {},
+      {},
+      {
+        includeChannelBasicCatalog: true,
+      },
+    );
+
+    expect([...catalog.processorCatalog.components.keys()].sort()).toEqual([
+      "Button",
+      "Card",
+      "Column",
+      "Divider",
+      "Image",
+      "Row",
+      "Text",
+    ]);
+    expect(Object.keys(catalog.middlewareSchema.components).sort()).toEqual([
+      "Button",
+      "Card",
+      "Column",
+      "Divider",
+      "Image",
+      "Row",
+      "Text",
+    ]);
+  });
 });
