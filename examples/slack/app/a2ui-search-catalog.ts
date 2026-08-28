@@ -1,4 +1,6 @@
 import {
+  Actions,
+  Button,
   Cell,
   Context,
   Divider,
@@ -8,7 +10,7 @@ import {
   Section,
   Table,
 } from "@copilotkit/channels";
-import type { Renderable } from "@copilotkit/channels";
+import type { ClickHandler, Renderable } from "@copilotkit/channels";
 import { createChannelA2UICatalog } from "@copilotkit/channels/a2ui";
 import { z } from "zod";
 
@@ -30,6 +32,7 @@ export interface SearchResultCardProps {
 
 export function renderSearchResultCard(
   props: SearchResultCardProps,
+  onAcknowledge?: ClickHandler,
 ): Renderable {
   return Message({
     fallbackText: props.headline,
@@ -61,6 +64,13 @@ export function renderSearchResultCard(
         children: `**Why it matters**\n${props.whyItMatters}`,
       }),
       Context({ children: `Searched ${props.searchedAt}` }),
+      Actions({
+        children: Button({
+          children: "Acknowledge",
+          style: "primary",
+          onClick: onAcknowledge,
+        }),
+      }),
     ],
   });
 }
@@ -68,11 +78,26 @@ export function renderSearchResultCard(
 export function createSearchResultCatalog() {
   const market = z
     .object({
-      name: z.string(),
-      price: z.string(),
-      change: z.string(),
-      sourceName: z.string(),
-      sourceUrl: z.string().url(),
+      name: z
+        .string()
+        .describe("Short market or contract label shown in the Market column."),
+      price: z
+        .string()
+        .describe(
+          "Current grounded price including currency and unit, for example $79.42/bbl.",
+        ),
+      change: z
+        .string()
+        .describe(
+          "Latest grounded move including sign and percent or absolute unit.",
+        ),
+      sourceName: z
+        .string()
+        .describe("Publisher or exchange that supplied this row's price."),
+      sourceUrl: z
+        .string()
+        .url()
+        .describe("Canonical absolute URL for this row's source."),
     })
     .strict();
 
@@ -80,20 +105,47 @@ export function createSearchResultCatalog() {
     {
       MarketSnapshot: {
         description:
-          "Three live market values with grounded sources and significance",
+          "Complete root-capable live market snapshot for exactly three related instruments. Renders a headline, concise summary, sourced market table, why-it-matters analysis, search timestamp, and a built-in Acknowledge action. Supply only grounded values copied from research context.",
         props: z
           .object({
-            headline: z.string(),
-            summary: z.string(),
-            markets: z.array(market).length(3),
-            whyItMatters: z.string(),
-            searchedAt: z.string(),
+            headline: z
+              .string()
+              .describe(
+                "Short headline describing the combined live market snapshot.",
+              ),
+            summary: z
+              .string()
+              .describe(
+                "One concise sentence summarizing the three markets' movement.",
+              ),
+            markets: z
+              .array(market)
+              .length(3)
+              .describe(
+                "Exactly three related, grounded market rows; keep each row's source attached to its price.",
+              ),
+            whyItMatters: z
+              .string()
+              .describe(
+                "Concise explanation of why the combined market movement matters.",
+              ),
+            searchedAt: z
+              .string()
+              .describe(
+                "UTC ISO 8601 time when the live search was performed.",
+              ),
           })
           .strict(),
       },
     },
     {
-      MarketSnapshot: ({ props }) => renderSearchResultCard(props),
+      MarketSnapshot: ({ props, dispatch }) =>
+        renderSearchResultCard(props, (interaction) =>
+          dispatch(
+            { event: { name: "acknowledge_search_result" } },
+            interaction,
+          ),
+        ),
     },
     {
       catalogId: "copilotkit://channels-market-snapshot/v1",

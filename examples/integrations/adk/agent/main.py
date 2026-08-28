@@ -25,36 +25,6 @@ from pydantic import BaseModel, Field
 load_dotenv()
 
 SEARCH_RESULT_CONTEXT_DESCRIPTION = "Grounded live market snapshot"
-SEARCH_CARD_COMPOSITION_GUIDE = """
-For a grounded live market snapshot, copy every value from the
-"Grounded live market snapshot" context exactly; never invent, rewrite, or
-replace them. Produce exactly this component structure, replacing only the
-uppercase placeholders with the corresponding context values and adding no
-other components:
-[
-  {"id": "root", "component": "Column", "children": ["snapshot", "actions"]},
-  {"id": "snapshot", "component": "MarketSnapshot", "headline": "HEADLINE",
-   "summary": "SUMMARY",
-   "markets": [
-     {"name": "MARKET_1_NAME", "price": "MARKET_1_PRICE",
-      "change": "MARKET_1_CHANGE", "sourceName": "MARKET_1_SOURCE_NAME",
-      "sourceUrl": "MARKET_1_SOURCE_URL"},
-     {"name": "MARKET_2_NAME", "price": "MARKET_2_PRICE",
-      "change": "MARKET_2_CHANGE", "sourceName": "MARKET_2_SOURCE_NAME",
-      "sourceUrl": "MARKET_2_SOURCE_URL"},
-     {"name": "MARKET_3_NAME", "price": "MARKET_3_PRICE",
-      "change": "MARKET_3_CHANGE", "sourceName": "MARKET_3_SOURCE_NAME",
-      "sourceUrl": "MARKET_3_SOURCE_URL"}
-   ],
-   "whyItMatters": "WHY_IT_MATTERS",
-   "searchedAt": "SEARCHED_AT"},
-  {"id": "actions", "component": "Row", "children": ["acknowledge"]},
-  {"id": "acknowledge-label", "component": "Text", "text": "Acknowledge"},
-  {"id": "acknowledge", "component": "Button",
-   "child": "acknowledge-label", "variant": "primary",
-   "action": {"event": {"name": "acknowledge_search_result"}}}
-]
-"""
 
 
 class ProverbsState(BaseModel):
@@ -103,7 +73,7 @@ def stage_search_result(
     why_it_matters: str,
     searched_at: str,
 ) -> Dict[str, str]:
-    """Stage three grounded market rows for exact A2UI rendering."""
+    """Stage three grounded market rows for interactive rendering."""
     entries = [
         entry
         for entry in list(tool_context.state.get(CONTEXT_STATE_KEY, []))
@@ -211,7 +181,7 @@ def simple_after_model_modifier(
 
 search_agent = LlmAgent(
     name="SearchAgent",
-    model="gemini-2.5-flash",
+    model="gemini-3.7-flash",
     description="Searches the live web for a grounded three-market snapshot.",
     instruction="""
         Use Google Search for the user's current market-data request. Return a
@@ -228,7 +198,7 @@ search_agent = LlmAgent(
 
 proverbs_agent = LlmAgent(
     name="ProverbsAgent",
-    model="gemini-2.5-flash",
+    model="gemini-3.7-flash",
     instruction="""
         When a user asks you to do anything regarding proverbs, you MUST use the set_proverbs tool.
 
@@ -261,8 +231,8 @@ proverbs_agent = LlmAgent(
         1. For a current market-data request, delegate to SearchAgent.
         2. Copy SearchAgent's snapshot fields and all three market rows exactly
            into stage_search_result.
-        3. Only after staging succeeds, call the available A2UI generation tool
-           exactly once with intent="create".
+        3. Only after staging succeeds, present the result with the available
+           interactive UI tool exactly once.
         4. Do not substitute a prose-only answer for the structured snapshot.
            After rendering, any prose must be a single short sentence.
         5. When the user action "acknowledge_search_result" is received, briefly
@@ -286,7 +256,6 @@ adk_proverbs_agent = ADKAgent(
     user_id="demo_user",
     session_timeout_seconds=3600,
     use_in_memory_services=True,
-    a2ui={"guidelines": {"composition_guide": SEARCH_CARD_COMPOSITION_GUIDE}},
 )
 
 # Create FastAPI app

@@ -5,8 +5,9 @@ from types import SimpleNamespace
 from ag_ui_adk import AGUIToolset, CONTEXT_STATE_KEY
 from google.adk.tools.agent_tool import AgentTool
 
+import main
 from main import (
-    SEARCH_CARD_COMPOSITION_GUIDE,
+    adk_proverbs_agent,
     proverbs_agent,
     search_agent,
     stage_search_result,
@@ -29,6 +30,14 @@ class AgentTopologyTest(unittest.TestCase):
     def test_search_agent_owns_google_search(self):
         self.assertEqual(search_agent.name, "SearchAgent")
         self.assertEqual(len(search_agent.tools), 1)
+
+    def test_agents_use_gemini_3_7_flash(self):
+        self.assertEqual(search_agent.model, "gemini-3.7-flash")
+        self.assertEqual(proverbs_agent.model, "gemini-3.7-flash")
+
+    def test_a2ui_structure_comes_only_from_the_injected_catalog(self):
+        self.assertFalse(hasattr(main, "SEARCH_CARD_COMPOSITION_GUIDE"))
+        self.assertIsNone(adk_proverbs_agent._a2ui_config)
 
     def test_search_result_is_staged_for_the_a2ui_subagent(self):
         tool_context = SimpleNamespace(
@@ -84,9 +93,6 @@ class AgentTopologyTest(unittest.TestCase):
             staged["markets"][0]["sourceUrl"],
             "https://www.reuters.com/markets/commodities/",
         )
-        self.assertIn('"component": "MarketSnapshot"', SEARCH_CARD_COMPOSITION_GUIDE)
-        self.assertIn('"component": "Button"', SEARCH_CARD_COMPOSITION_GUIDE)
-        self.assertIn("acknowledge_search_result", SEARCH_CARD_COMPOSITION_GUIDE)
 
 
 if __name__ == "__main__":
