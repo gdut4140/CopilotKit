@@ -24,17 +24,29 @@ from pydantic import BaseModel, Field
 
 load_dotenv()
 
-SEARCH_RESULT_CONTEXT_DESCRIPTION = "Grounded web search result"
+SEARCH_RESULT_CONTEXT_DESCRIPTION = "Grounded live market snapshot"
 SEARCH_CARD_COMPOSITION_GUIDE = """
-For a grounded web-search result, copy the six values from the
-"Grounded web search result" context exactly; never invent, rewrite, or replace
-them. Produce exactly this component structure, replacing only the six uppercase
-placeholders with those context values and adding no other components:
+For a grounded live market snapshot, copy every value from the
+"Grounded live market snapshot" context exactly; never invent, rewrite, or
+replace them. Produce exactly this component structure, replacing only the
+uppercase placeholders with the corresponding context values and adding no
+other components:
 [
-  {"id": "root", "component": "Column", "children": ["result", "actions"]},
-  {"id": "result", "component": "SearchResultCard", "headline": "HEADLINE",
-   "summary": "SUMMARY", "sourceName": "SOURCE_NAME",
-   "sourceUrl": "SOURCE_URL", "whyItMatters": "WHY_IT_MATTERS",
+  {"id": "root", "component": "Column", "children": ["snapshot", "actions"]},
+  {"id": "snapshot", "component": "MarketSnapshot", "headline": "HEADLINE",
+   "summary": "SUMMARY",
+   "markets": [
+     {"name": "MARKET_1_NAME", "price": "MARKET_1_PRICE",
+      "change": "MARKET_1_CHANGE", "sourceName": "MARKET_1_SOURCE_NAME",
+      "sourceUrl": "MARKET_1_SOURCE_URL"},
+     {"name": "MARKET_2_NAME", "price": "MARKET_2_PRICE",
+      "change": "MARKET_2_CHANGE", "sourceName": "MARKET_2_SOURCE_NAME",
+      "sourceUrl": "MARKET_2_SOURCE_URL"},
+     {"name": "MARKET_3_NAME", "price": "MARKET_3_PRICE",
+      "change": "MARKET_3_CHANGE", "sourceName": "MARKET_3_SOURCE_NAME",
+      "sourceUrl": "MARKET_3_SOURCE_URL"}
+   ],
+   "whyItMatters": "WHY_IT_MATTERS",
    "searchedAt": "SEARCHED_AT"},
   {"id": "actions", "component": "Row", "children": ["acknowledge"]},
   {"id": "acknowledge-label", "component": "Text", "text": "Acknowledge"},
@@ -87,12 +99,11 @@ def stage_search_result(
     tool_context: ToolContext,
     headline: str,
     summary: str,
-    source_name: str,
-    source_url: str,
+    markets: list[dict[str, str]],
     why_it_matters: str,
     searched_at: str,
 ) -> Dict[str, str]:
-    """Stage one grounded result so the A2UI sub-agent can render exact values."""
+    """Stage three grounded market rows for exact A2UI rendering."""
     entries = [
         entry
         for entry in list(tool_context.state.get(CONTEXT_STATE_KEY, []))
@@ -108,8 +119,7 @@ def stage_search_result(
                 {
                     "headline": headline,
                     "summary": summary,
-                    "sourceName": source_name,
-                    "sourceUrl": source_url,
+                    "markets": markets,
                     "whyItMatters": why_it_matters,
                     "searchedAt": searched_at,
                 }
@@ -202,14 +212,15 @@ def simple_after_model_modifier(
 search_agent = LlmAgent(
     name="SearchAgent",
     model="gemini-2.5-flash",
-    description="Searches the live web and returns one grounded result.",
+    description="Searches the live web for a grounded three-market snapshot.",
     instruction="""
-        Use Google Search for the user's current-events or web-research request.
-        Return exactly one strongest relevant result with its headline, a concise
-        summary, source publisher, canonical absolute source URL, why it matters,
-        and the current UTC search time in ISO 8601 format. Choose a result for
-        which a real canonical source URL is available. Never invent a source,
-        URL, date, or event.
+        Use Google Search for the user's current market-data request. Return a
+        concise headline and summary plus exactly three closely related market
+        rows. Each row must have a display name, current price including units,
+        latest percentage or absolute change, source publisher, and canonical
+        absolute source URL. Also return why the combined movement matters and
+        the current UTC search time in ISO 8601 format. Never invent a price,
+        change, source, URL, or timestamp.
     """,
     tools=[google_search],
 )
@@ -246,13 +257,14 @@ proverbs_agent = LlmAgent(
         - Is it raining in London? → Use the tool with the location "London"
 
 
-        IMPORTANT RULES ABOUT LIVE WEB RESEARCH AND A2UI:
-        1. For a current-events or web-research request, delegate to SearchAgent.
-        2. Copy SearchAgent's six result fields exactly into stage_search_result.
+        IMPORTANT RULES ABOUT LIVE MARKET RESEARCH AND A2UI:
+        1. For a current market-data request, delegate to SearchAgent.
+        2. Copy SearchAgent's snapshot fields and all three market rows exactly
+           into stage_search_result.
         3. Only after staging succeeds, call the available A2UI generation tool
            exactly once with intent="create".
-        4. Do not substitute a prose-only answer for the card. After rendering, any
-           prose must be a single short sentence.
+        4. Do not substitute a prose-only answer for the structured snapshot.
+           After rendering, any prose must be a single short sentence.
         5. When the user action "acknowledge_search_result" is received, briefly
            confirm it without searching again or rendering another card.
         """,

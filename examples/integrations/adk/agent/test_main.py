@@ -39,22 +39,52 @@ class AgentTopologyTest(unittest.TestCase):
             }
         )
 
-        result = stage_search_result(
-            tool_context,
-            headline="Artemis II update",
-            summary="NASA published an update.",
-            source_name="NASA",
-            source_url="https://www.nasa.gov/example",
-            why_it_matters="It advances the mission.",
-            searched_at="2026-08-28T12:00:00Z",
-        )
+        try:
+            result = stage_search_result(
+                tool_context,
+                headline="Live energy market snapshot",
+                summary="Oil benchmarks moved lower.",
+                markets=[
+                    {
+                        "name": "Brent crude",
+                        "price": "$79.42/bbl",
+                        "change": "-0.8%",
+                        "sourceName": "Reuters",
+                        "sourceUrl": "https://www.reuters.com/markets/commodities/",
+                    },
+                    {
+                        "name": "WTI crude",
+                        "price": "$75.18/bbl",
+                        "change": "-0.6%",
+                        "sourceName": "CME Group",
+                        "sourceUrl": "https://www.cmegroup.com/markets/energy/crude-oil.html",
+                    },
+                    {
+                        "name": "RBOB gasoline",
+                        "price": "$2.31/gal",
+                        "change": "+0.2%",
+                        "sourceName": "CME Group",
+                        "sourceUrl": "https://www.cmegroup.com/markets/energy/refined-products/rbob-gasoline.html",
+                    },
+                ],
+                why_it_matters="Energy prices affect transportation costs.",
+                searched_at="2026-08-28T12:00:00Z",
+            )
+        except TypeError as error:
+            self.fail(f"stage_search_result lacks the market snapshot API: {error}")
 
         self.assertEqual(result["status"], "success")
         entries = tool_context.state[CONTEXT_STATE_KEY]
         self.assertEqual(entries[0]["value"], "preserved")
         staged = json.loads(entries[-1]["value"])
-        self.assertEqual(staged["sourceUrl"], "https://www.nasa.gov/example")
-        self.assertEqual(staged["headline"], "Artemis II update")
+        self.assertEqual(staged["headline"], "Live energy market snapshot")
+        self.assertEqual(len(staged["markets"]), 3)
+        self.assertEqual(staged["markets"][0]["name"], "Brent crude")
+        self.assertEqual(
+            staged["markets"][0]["sourceUrl"],
+            "https://www.reuters.com/markets/commodities/",
+        )
+        self.assertIn('"component": "MarketSnapshot"', SEARCH_CARD_COMPOSITION_GUIDE)
         self.assertIn('"component": "Button"', SEARCH_CARD_COMPOSITION_GUIDE)
         self.assertIn("acknowledge_search_result", SEARCH_CARD_COMPOSITION_GUIDE)
 
